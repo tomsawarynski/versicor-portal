@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Local SQLite (prod uses Postgres via DATABASE_URL)
+*.db
+portal.db
+instance/
+
+# OS / editor
+.DS_Store
+Thumbs.db

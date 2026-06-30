@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Versicor Forecast Portal{% endblock %}</title>
+  <style>
+    :root { --orange:#e8741e; --ink:#1a1a1a; --line:#d8d8d8; --bg:#f4f4f5; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+           background:var(--bg); color:var(--ink); }
+    header { background:var(--ink); color:#fff; padding:14px 22px;
+             display:flex; align-items:center; justify-content:space-between; }
+    header .brand { font-weight:700; letter-spacing:.04em; }
+    header .brand span { color:var(--orange); }
+    header a { color:#ccc; text-decoration:none; font-size:14px; }
+    header a:hover { color:#fff; }
+    .container { max-width:1200px; margin:0 auto; padding:22px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:20px; }
+    .btn { display:inline-block; border:none; border-radius:6px; padding:9px 16px;
+           font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; }
+    .btn-primary { background:var(--orange); color:#fff; }
+    .btn-primary:hover { background:#cf6314; }
+    .flash { padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:14px; }
+    .flash.info { background:#e7f3ff; border:1px solid #b6daff; color:#0b4a8a; }
+    .flash.error { background:#fde8e8; border:1px solid #f5b5b5; color:#8a1c1c; }
+    input[type=email] { width:100%; padding:10px; border:1px solid var(--line);
+                        border-radius:6px; font-size:15px; }
+    .muted { color:#666; font-size:13px; }
+    h1 { font-size:22px; margin:0 0 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">VERSICOR <span>·</span> Forecast Portal</div>
+    {% if session.get('uid') %}<a href="{{ url_for('logout') }}">Sign out</a>{% endif %}
+  </header>
+  <div class="container">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

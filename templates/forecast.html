@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Forecast · Versicor{% endblock %}
+{% block content %}
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+  <div>
+    <h1>Weekly Forecast</h1>
+    <div class="muted">{{ customer.name }} &middot; signed in as {{ user.email }}</div>
+  </div>
+</div>
+
+{% if grid %}
+<form method="post" action="{{ url_for('forecast_submit') }}">
+  <div class="card" style="padding:0; overflow:auto;">
+    <table style="border-collapse:collapse; width:100%; font-size:13px;">
+      <thead>
+        <tr style="background:var(--orange); color:#fff;">
+          <th style="position:sticky; left:0; background:var(--orange);
+                     text-align:left; padding:10px 12px; min-width:200px;">Part</th>
+          {% for w in weeks %}
+          <th style="padding:8px 6px; white-space:nowrap; border-left:1px solid #fff2;">
+            {{ w.strftime('%b %-d') }}<br>
+            <span style="font-weight:400; opacity:.85; font-size:11px;">wk {{ w.isocalendar()[1] }}</span>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in grid %}
+        <tr style="border-top:1px solid var(--line);">
+          <td style="position:sticky; left:0; background:#fff; padding:8px 12px;
+                     border-right:1px solid var(--line);">
+            <div style="font-weight:600;">{{ row.part_number }}</div>
+            {% if row.description %}<div class="muted">{{ row.description }}</div>{% endif %}
+          </td>
+          {% for cell in row.cells %}
+          <td style="padding:4px; text-align:center; border-left:1px solid #eee;">
+            <input type="number" min="0" step="1"
+                   name="qty-{{ row.part_id }}-{{ loop.index0 }}"
+                   value="{{ cell }}"
+                   style="width:62px; padding:6px 4px; text-align:center;
+                          border:1px solid var(--line); border-radius:4px;">
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="margin-top:16px; display:flex; align-items:center; gap:14px;">
+    <button type="submit" class="btn btn-primary">Submit forecast</button>
+    <span class="muted">Enter expected quantities per week. Blank = no forecast. Saved entries pre-fill next time.</span>
+  </div>
+</form>
+{% else %}
+<div class="card">
+  <p>No parts are currently assigned to your account. Please contact Versicor.</p>
+</div>
+{% endif %}
+{% endblock %}
