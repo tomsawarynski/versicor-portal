@@ -46,6 +46,8 @@ MAIL_FROM      = os.environ.get("MAIL_FROM", "Versicor Portal <onboarding@resend
 PORTAL_BASE_URL = os.environ.get("PORTAL_BASE_URL", "http://localhost:5000")
 MAGIC_LINK_TTL = int(os.environ.get("MAGIC_LINK_TTL", "15"))   # minutes
 WEEKS_AHEAD    = int(os.environ.get("WEEKS_AHEAD", "12"))
+# Comma-separated recipients notified when a customer submits a forecast.
+NOTIFY_EMAILS  = os.environ.get("NOTIFY_EMAILS", "")
 
 # Render gives postgres:// ; SQLAlchemy wants postgresql://
 if DATABASE_URL.startswith("postgres://"):
@@ -155,6 +157,49 @@ def send_magic_link(email: str, link: str):
                 f"<p>This link expires in {MAGIC_LINK_TTL} minutes. "
                 f"If you didn't request it, ignore this email.</p>"
             ),
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+
+
+def notify_forecast_submitted(customer: str, submitted_by: str, changes: list):
+    """Email configured recipients a summary of what changed on a submit.
+    changes: [{part, week (date), wknum, old (int|None), new (int)}, ...]"""
+    recipients = [e.strip() for e in NOTIFY_EMAILS.split(",") if e.strip()]
+    if not RESEND_API_KEY or not recipients or not changes:
+        if not RESEND_API_KEY:
+            app.logger.warning("Forecast submitted by %s (%s): %d change(s) "
+                               "— no RESEND_API_KEY, not emailing",
+                               submitted_by, customer, len(changes))
+        return
+    rows = ""
+    for c in changes:
+        wk = f"{c['week'].strftime('%b %d, %Y')} (wk {c['wknum']})"
+        delta = (f"new: <b>{c['new']}</b>" if c['old'] is None
+                 else f"<b>{c['old']} &rarr; {c['new']}</b>")
+        rows += (f"<tr><td>{c['part']}</td><td>{wk}</td><td>{delta}</td></tr>")
+    n = len(changes)
+    html = (
+        f"<p><b>{customer}</b> submitted a forecast update "
+        f"(by {submitted_by}).</p>"
+        f"<table cellpadding='6' cellspacing='0' "
+        f"style='border-collapse:collapse;border:1px solid #ccc'>"
+        f"<tr style='background:#f3f4f6'><th align='left'>Part</th>"
+        f"<th align='left'>Week</th><th align='left'>Change</th></tr>"
+        f"{rows}</table>"
+        f"<p><a href='{PORTAL_BASE_URL}/forecast'>Open the portal</a></p>"
+    )
+    import requests
+    resp = requests.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+        json={
+            "from": MAIL_FROM,
+            "to": recipients,
+            "subject": f"Forecast update from {customer} "
+                       f"({n} change{'s' if n != 1 else ''})",
+            "html": html,
         },
         timeout=15,
     )
@@ -309,18 +354,31 @@ def forecast():
 def forecast_submit():
     user = current_user()
     db = SessionLocal()
+    changes = []
+    customer_name = ""
     try:
         # Re-fetch the user's own parts; never trust part ids from the form
         # without confirming they belong to this customer.
-        allowed = {
-            p.id for p in db.execute(
-                select(Part).where(
-                    Part.customer_id == user.customer_id,
-                    Part.active.is_(True),
-                )
-            ).scalars().all()
-        }
+        parts = db.execute(
+            select(Part).where(
+                Part.customer_id == user.customer_id,
+                Part.active.is_(True),
+            )
+        ).scalars().all()
+        allowed = {p.id for p in parts}
+        part_no = {p.id: p.part_number for p in parts}
         weeks = upcoming_weeks(WEEKS_AHEAD)
+
+        # Latest submitted qty per (part, week) BEFORE this submit, to diff against.
+        prior = {}
+        for r in db.execute(
+            select(Forecast).where(
+                Forecast.customer_id == user.customer_id,
+                Forecast.week_start.in_(weeks),
+            ).order_by(Forecast.submitted_at)
+        ).scalars().all():
+            prior[(r.part_id, r.week_start)] = r.qty
+
         now = dt.datetime.utcnow()
         written = 0
         for key, val in request.form.items():
@@ -341,19 +399,34 @@ def forecast_submit():
                 qty = max(0, int(val))
             except ValueError:
                 continue
+            wk = weeks[widx]
+            old = prior.get((pid, wk))
             db.add(Forecast(
                 customer_id=user.customer_id,
                 part_id=pid,
-                week_start=weeks[widx],
+                week_start=wk,
                 qty=qty,
                 submitted_by=user.email,
                 submitted_at=now,
                 synced=False,
             ))
             written += 1
+            if old is None or old != qty:          # new entry or an actual change
+                changes.append({"part": part_no.get(pid, str(pid)), "week": wk,
+                                "wknum": wk.isocalendar()[1], "old": old, "new": qty})
         db.commit()
+        cust = db.get(Customer, user.customer_id)
+        customer_name = cust.name if cust else ""
     finally:
         db.close()
+
+    # Notify shop staff of what changed (best-effort; never block the submit).
+    if changes:
+        try:
+            notify_forecast_submitted(customer_name, user.email, changes)
+        except Exception:
+            app.logger.exception("Failed to send forecast notification")
+
     flash(f"Forecast submitted ({written} entries saved).", "info")
     return redirect(url_for("forecast"))
 
