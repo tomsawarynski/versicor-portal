@@ -454,16 +454,23 @@ def sync_parts():
             cust.name = c.get("name", cust.name)
             cust.active = bool(c.get("active", True))
 
-            # Users — add any new emails (don't delete; deactivate via active flag)
-            for email in c.get("users", []):
-                email = email.strip().lower()
-                if not email:
-                    continue
+            # Users — reconcile against the pushed active allow-list: add or
+            # reactivate emails present, deactivate this customer's users absent
+            # from the push (so disabling a contact shop-side revokes the login).
+            pushed = {e.strip().lower() for e in c.get("users", []) if e and e.strip()}
+            for email in pushed:
                 existing = db.execute(
                     select(CustomerUser).where(func.lower(CustomerUser.email) == email)
                 ).scalar_one_or_none()
                 if not existing:
                     db.add(CustomerUser(customer_id=cust.id, email=email, active=True))
+                elif not existing.active:
+                    existing.active = True
+            for u in db.execute(
+                select(CustomerUser).where(CustomerUser.customer_id == cust.id)
+            ).scalars().all():
+                if u.email.strip().lower() not in pushed:
+                    u.active = False
 
             # Parts — upsert, then deactivate any not in this push
             seen = set()
